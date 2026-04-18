@@ -1,0 +1,93 @@
+server:
+  port: 7090
+  servlet:
+    context-path: /
+    session:
+      timeout: PT60M
+
+spring:
+  mvc:
+    favicon:
+      enable: false
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+  servlet:
+    multipart:
+      max-file-size: 15MB
+      max-request-size: 15MB
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/easypan?serverTimezone=GMT%2B8&useUnicode=true&characterEncoding=utf8&autoReconnect=true&allowMultiQueries=true
+    username: root
+    password: 123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: HikariCPDatasource
+      minimum-idle: 5
+      idle-timeout: 180000
+      maximum-pool-size: 10
+      auto-commit: true
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      connection-test-query: SELECT 1
+  mail:
+    host: smtp.qq.com
+    port: 465
+    username: 2077445245@qq.com
+    password: caqfoattfvzregec
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          socketFactory:
+            class: javax.net.ssl.SSLSocketFactory
+        debug: true
+  redis:
+    database: 0
+    host: 127.0.0.1
+    port: 6379
+    password: 123456
+    jedis:
+      pool:
+        max-active: 20
+        max-wait: -1
+        max-idle: 10
+        min-idle: 0
+    timeout: 2000
+
+mybatis-plus:
+  configuration:
+    # 开启MP的日志（输出到控制台）
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      logic-delete-field: deleted
+  mapper-locations: classpath:mapper/*.xml
+
+project:
+  folder: E:/code/easypan-main/webser/web_app/easypan
+
+log:
+  root:
+    level: info
+
+admin:
+  emails: 2077445245@qq.com
+
+dev: false
+
+qq:
+  app:
+    id: 12333
+    key: 2222222
+  url:
+    authorization: https://graph.qq.com/oauth2.0/authorize?response_type=code&client_id=%s&redirect_uri=%s&state=%s
+    access:
+      token: https://graph.qq.com/oauth2.0/token?grant_type=authorization_code&client_id=%s&client_secret=%s&code=%s&redirect_uri=%s
+    openid: https://graph.qq.com/oauth2.0/me?access_token=%S
+    user:
+      info: https://graph.qq.com/user/get_user_info?access_token=%s&oauth_consumer_key=%s&openid=%s
+    redirect: http://easypan.wuhancoder.com/qqlogincalback

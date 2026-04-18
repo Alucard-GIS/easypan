@@ -1,0 +1,20 @@
+2026-04-12 17:17:06 [INFO][org.hibernate.validator.internal.util.Version][<clinit>][21]-> HV000001: Hibernate Validator 6.2.0.Final
+2026-04-12 17:17:06 [INFO][com.swx.easypan.EasyPanApplication][logStarting][55]-> Starting EasyPanApplication using Java 17 on Alucard with PID 65464 (E:\code\easypan-main\easypan-server\server\target\classes started by 20774 in E:\code\easypan-main\easypan-server)
+2026-04-12 17:17:06 [INFO][com.swx.easypan.EasyPanApplication][logStartupProfileInfo][635]-> No active profile set, falling back to default profiles: default
+2026-04-12 17:17:06 [WARN][org.springframework.boot.web.servlet.context.AnnotationConfigServletWebServerApplicationContext][refresh][591]-> Exception encountered during context initialization - cancelling refresh attempt: org.springframework.context.ApplicationContextException: Unable to start web server; nested exception is org.springframework.context.ApplicationContextException: Unable to start ServletWebServerApplicationContext due to missing ServletWebServerFactory bean.
+2026-04-12 17:17:06 [ERROR][org.springframework.boot.SpringApplication][reportFailure][819]-> Application run failed
+org.springframework.context.ApplicationContextException: Unable to start web server; nested exception is org.springframework.context.ApplicationContextException: Unable to start ServletWebServerApplicationContext due to missing ServletWebServerFactory bean.
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.onRefresh(ServletWebServerApplicationContext.java:163)
+	at org.springframework.context.support.AbstractApplicationContext.refresh(AbstractApplicationContext.java:577)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.refresh(ServletWebServerApplicationContext.java:145)
+	at org.springframework.boot.SpringApplication.refresh(SpringApplication.java:730)
+	at org.springframework.boot.SpringApplication.refreshContext(SpringApplication.java:412)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:302)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1301)
+	at org.springframework.boot.SpringApplication.run(SpringApplication.java:1290)
+	at com.swx.easypan.EasyPanApplication.main(EasyPanApplication.java:15)
+Caused by: org.springframework.context.ApplicationContextException: Unable to start ServletWebServerApplicationContext due to missing ServletWebServerFactory bean.
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.getWebServerFactory(ServletWebServerApplicationContext.java:210)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.createWebServer(ServletWebServerApplicationContext.java:180)
+	at org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext.onRefresh(ServletWebServerApplicationContext.java:160)
+	... 8 common frames omitted
