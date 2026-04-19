@@ -88,7 +88,7 @@ public class FileInfoController {
         return userFileService.uploadFile(user.getId(), file, fileDTO);
     }
 
-    // 获取文件封面
+    // 获取文件封面和图片文件预览
     @GetMapping("/getImage/{imageFolder}/{imageName}")
     public void getImage(HttpServletResponse response,
                          @PathVariable("imageFolder") @NotNull String imageFolder,
@@ -97,7 +97,7 @@ public class FileInfoController {
         FileUtils.writeImage(response, imagePath);
     }
 
-    // 获取视频文件
+    // 获取视频文件（视频文件预览）
     @GetMapping("/ts/getVideoInfo/{id}")
     public void getVideoInfo(HttpSession session,
                              HttpServletResponse response,
@@ -107,7 +107,7 @@ public class FileInfoController {
         FileUtil.readFile(response, filePath);
     }
 
-    // 获取文件
+    // 获取文件（普通文件预览）
     @GetMapping("/getFile/{id}")
     public void getFile(HttpSession session,
                         HttpServletResponse response,
