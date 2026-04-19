@@ -55,6 +55,12 @@ spring:
         max-idle: 10
         min-idle: 0
     timeout: 2000
+  rabbitmq:
+    host: 192.168.100.128
+    port: 5672
+    virtual-host: /easypan
+    username: easypan
+    password: 123
 
 mybatis-plus:
   configuration:

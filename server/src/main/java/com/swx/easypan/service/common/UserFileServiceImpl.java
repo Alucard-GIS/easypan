@@ -9,6 +9,7 @@ import com.swx.easypan.entity.dto.FileUploadDTO;
 import com.swx.easypan.entity.dto.UserSpaceDTO;
 import com.swx.easypan.entity.enums.*;
 import com.swx.easypan.entity.vo.UploadResultVO;
+import com.swx.easypan.mq.producer.FileProcessProducer;
 import com.swx.easypan.pojo.FileInfo;
 import com.swx.easypan.pojo.UserInfo;
 import com.swx.easypan.redis.RedisComponent;
@@ -38,14 +39,17 @@ public class UserFileServiceImpl implements UserFileService {
     private final UserInfoService userInfoService;
     private final AppConfig appConfig;
     private final FileInfoServiceImpl fileInfoServiceImpl;
+    private final FileProcessProducer fileProcessProducer;
 
 
-    public UserFileServiceImpl(RedisComponent redisComponent, FileInfoService fileInfoService, UserInfoService userInfoService, AppConfig appConfig, FileInfoServiceImpl fileInfoServiceImpl) {
+    public UserFileServiceImpl(RedisComponent redisComponent, FileInfoService fileInfoService, UserInfoService userInfoService,
+                               AppConfig appConfig, FileInfoServiceImpl fileInfoServiceImpl, FileProcessProducer fileProcessProducer) {
         this.redisComponent = redisComponent;
         this.fileInfoService = fileInfoService;
         this.userInfoService = userInfoService;
         this.appConfig = appConfig;
         this.fileInfoServiceImpl = fileInfoServiceImpl;
+        this.fileProcessProducer = fileProcessProducer;
     }
 
     /**
@@ -146,7 +150,11 @@ public class UserFileServiceImpl implements UserFileService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    fileInfoServiceImpl.transferFile(finalFileId, userId);
+                    try {
+                        fileProcessProducer.sendFileProcessMessage(finalFileId, userId);
+                    } catch (Exception e) {
+                        fileInfoServiceImpl.transferFile(finalFileId, userId);
+                    }
                 }
             });
             return resultVO;

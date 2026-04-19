@@ -23,10 +23,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.time.DateFormatUtils;
-import org.springframework.beans.BeanUtils;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.beans.BeanUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -393,7 +392,6 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
     }
 
     //文件合并和转码，异步执行
-    @Async
     public void transferFile(String fileId, String userId) {
         boolean transferSuccess = true;
         String targetFilePath = null;
@@ -490,55 +488,39 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
     private void union(String dirPath, String toFilePath, String filename, Boolean delSource) {
         File dir = new File(dirPath);
         if (!dir.exists()) {
-            throw new BizException("目录不存在");
+            throw new BizException("临时分片目录不存在");
         }
-        //获取所有分片文件
         File[] files = dir.listFiles();
-        //创建合并后的目标文件
+        if (files == null || files.length == 0) {
+            throw new BizException("未找到可合并的分片文件");
+        }
         File targetFile = new File(toFilePath);
-        //设置使用RandomAccessFile类以读写模式来打开文件
-        RandomAccessFile writeFile = null;
-        try {
-            //创建writeFile类，以读写的方式打开文件
-            writeFile = new RandomAccessFile(targetFile, "rw");
-            //设置缓冲区，临时存储数据，统一写入TargetFile文件中
-            byte[] b = new byte[1024 * 10];
-            //遍历所有的分片文件
+        try (RandomAccessFile writeFile = new RandomAccessFile(targetFile, "rw")) {
+            byte[] buffer = new byte[1024 * 10];
             for (int i = 0; i < files.length; i++) {
-                int len = -1;
-                //得到具体的分片文件{File.separator实际上就是"/"}
                 File chunkFile = new File(dirPath + "/" + i);
-                //创建一个新的randomAccessFile类来读文件
-                RandomAccessFile readFile = null;
-                try {
-                    //尝试从chunkfile中读文件
-                    readFile = new RandomAccessFile(chunkFile, "r");
-                    //循环{把读取到的字节数赋值给{len}，只要结果不是-1，那么就一直读取文件
-                    while ((len = readFile.read(b)) != -1) {
-                        //把b里面的数据写到target中
-                        writeFile.write(b, 0, len);
+                if (!chunkFile.exists()) {
+                    throw new BizException("分片文件不存在:" + chunkFile.getName());
+                }
+                try (RandomAccessFile readFile = new RandomAccessFile(chunkFile, "r")) {
+                    int len;
+                    while ((len = readFile.read(buffer)) != -1) {
+                        writeFile.write(buffer, 0, len);
                     }
                 } catch (Exception e) {
-                    log.error("合并分片失败", e);
+                    log.error("合并分片失败, chunkFile:{}", chunkFile.getAbsolutePath(), e);
                     throw new BizException("合并分片失败");
                 }
             }
         } catch (Exception e) {
-            log.error("合并文件:{}失败", filename, e);
-            throw new BizException("合并文件" + filename + "出错了");
+            log.error("合并文件失败: {}", filename, e);
+            throw new BizException("合并文件失败:" + filename);
         } finally {
-            if (null != writeFile) {
-                try {
-                    writeFile.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
             if (delSource && dir.exists()) {
                 try {
                     FileUtils.deleteDirectory(dir);
                 } catch (IOException e) {
-                    e.printStackTrace();
+                    log.error("删除临时分片目录失败, dirPath:{}", dirPath, e);
                 }
             }
         }

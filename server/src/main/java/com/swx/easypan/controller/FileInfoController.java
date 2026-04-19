@@ -79,7 +79,7 @@ public class FileInfoController {
         return fileInfoService.pageInfo(pageParam, query);
     }
 
-    // 文件长传
+    // 文件上传
     @PostMapping("/uploadFile")
     public UploadResultVO uploadFile(HttpSession session,
                                      MultipartFile file,
