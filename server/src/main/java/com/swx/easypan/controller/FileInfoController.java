@@ -134,7 +134,7 @@ public class FileInfoController {
 
     // 文件重命名
     @PutMapping("/rename")
-    public FileInfoVO rename(HttpSession session, @RequestBody RenameFileDTO renameFileDTO) {
+    public FileInfoVO rename(HttpSession session, @Validated @RequestBody RenameFileDTO renameFileDTO) {
         SessionWebUserVO user = (SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY);
         return fileInfoService.rename(user.getId(), renameFileDTO);
     }

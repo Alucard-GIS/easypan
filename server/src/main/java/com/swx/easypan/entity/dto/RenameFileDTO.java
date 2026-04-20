@@ -9,7 +9,7 @@ public class RenameFileDTO implements Serializable {
     @NotEmpty
     private String id;
     @NotEmpty
-    @Pattern(regexp = "[^/]")
+    @Pattern(regexp = "[^/\\\\]+", message = "文件名不能包含路径分隔符")
     private String filename;
 
     public RenameFileDTO() {

@@ -56,6 +56,12 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         this.redisComponent = redisComponent;
     }
 
+    /**
+     * 分页查询文件信息
+     * @param pageParam
+     * @param query
+     * @return
+     */
     @Override
     public IPage<FileInfoVO> pageInfo(Page<FileInfo> pageParam, FileInfoQuery query) {
         IPage<FileInfo> iPage = baseMapper.selectPageInfo(pageParam, query);
@@ -80,6 +86,13 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         return baseMapper.selectUseSpace(userId);
     }
 
+    /**
+     * 保存文件信息
+     * @param userId  文件用户ID
+     * @param fileId  文件ID
+     * @param fileDTO 文件信息
+     * @return
+     */
     @Override
     public boolean saveFileInfo(String userId, String fileId, FileUploadDTO fileDTO) {
         // 获取当前年月作为文件目录
@@ -90,6 +103,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         FileTypeEnums fileTypeEnums = FileTypeEnums.getBySuffix(fileSuffix);
         String realFileName = userId + fileId + fileSuffix;
         FileInfo fileInfo = new FileInfo();
+        //新上传”必然是正常态：saveFileInfo 是新建记录，数据库字段默认应是“使用中”（0），所有不用手动赋值
         fileInfo.setId(fileId);
         fileInfo.setUserId(userId);
         fileInfo.setFileMd5(fileDTO.getFileMd5());
@@ -103,6 +117,14 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         return save(fileInfo);
     }
 
+    /**
+     * 秒传/复用已有文件
+     * @param userId  当前用户
+     * @param fileId  当前文件ID
+     * @param fileDTO 当前文件信息
+     * @param dbFile  已存在文件信息
+     * @return
+     */
     @Override
     public boolean saveFileInfoFromFile(String userId, String fileId, FileUploadDTO fileDTO, FileInfo dbFile) {
         dbFile.setId(fileId);
@@ -110,6 +132,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         dbFile.setUserId(userId);
         dbFile.setStatus(FileStatusEnums.USING.getStatus());
         dbFile.setFileMd5(fileDTO.getFileMd5());
+        //复用dbFile对象，dbFile很可能来自历史记录，deleted 可能是回收站/已删除态，所以必须显式 setDeleted(USING) 做“恢复”
         dbFile.setDeleted(FileDelFlagEnums.USING.getFlag());
         dbFile.setFilename(autoRename(fileDTO.getFilePid(), userId, fileDTO.getFilename()));
         return save(dbFile);
@@ -147,6 +170,12 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         return filePath;
     }
 
+    /**
+     * 新建文件夹
+     * @param folderDTO 目录信息
+     * @param userId    用户ID
+     * @return
+     */
     @Override
     public FileInfoVO newFolder(NewFolderDTO folderDTO, String userId) {
         // 校验文件夹名
@@ -168,7 +197,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
     }
 
     /**
-     * 根据ids获取目录信息
+     * 根据ID列表查询目录信息
      *
      * @param ids ids
      */
@@ -220,34 +249,54 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
 
     /**
      * 移动文件
-     *
+     * 把一批选中的文件/文件夹移动到目标目录 filePid 下，并在目标目录已存在同名时给被移动项自动改名以避免冲突。
      * @param userId      用户ID
      * @param moveFileDTO 移动文件信息
      */
     @Override
     public void changeFileFolder(String userId, MoveFileDTO moveFileDTO) {
+        //1.读取参数
         String filePid = moveFileDTO.getFilePid();
         String ids = moveFileDTO.getIds();
-        if (ids.equals(filePid)) {
+
+        //2.把选中的ID（ids）拆分成List，去掉空字符串，去重
+        List<String> idList = Arrays.stream(ids.split(","))
+                .filter(StringUtils::isNotBlank)
+                .distinct()
+                .collect(Collectors.toList());
+
+        //3.基础校验:目标目录不能是本次选中的任意条目（文件/文件夹）
+        if (idList.contains(filePid)) {
             throw new BizException("不能将文件移动到自身目录下");
         }
+        //4.如果目标目录不是根目录，校验目标目录合法性
         if (!Constants.ZERO_STR.equals(filePid)) {
             // 不在根目录
-            FileInfo fileInfo = getByMultiId(filePid, userId);
-            if (null == fileInfo || !FileDelFlagEnums.USING.getFlag().equals(fileInfo.getDeleted())) {
+            FileInfo targetFolder = getByMultiId(filePid, userId);
+            if (null == targetFolder
+                    || !FileDelFlagEnums.USING.getFlag().equals(targetFolder.getDeleted())
+                    // 目标目录必须是文件夹
+                    || !FileFolderTypeEnums.FOLDER.getType().equals(targetFolder.getFolderType())) {
                 throw new BizException("正在尝试非法移动");
             }
         }
-        // 查询Pid下的文件
+        //5.校验：选中的“文件夹”不能被移动到其子孙目录下（否则会形成环）
+        validateNotMoveFolderIntoDescendant(userId, filePid, idList);
+        //6.预取目标目录下已有名称，用于判重
         List<FileInfo> dbFile = list(new LambdaQueryWrapper<FileInfo>().eq(FileInfo::getFilePid, filePid).eq(FileInfo::getUserId, userId));
-        Map<String, FileInfo> dbFilenameMap = dbFile.stream().collect(Collectors.toMap(FileInfo::getFilename, Function.identity(), (a, b) -> b));
-        // 查询选中的文件
+        //把目标目录下的文件列表转换成Map，key是filename，value是FileInfo对象，方便后续查重时获取同名文件信息
+        Map<String, FileInfo> dbFilenameMap = new HashMap<>();
+        for (FileInfo fileInfo : dbFile) {
+            // 同名时覆盖旧值
+            dbFilenameMap.put(fileInfo.getFilename(),fileInfo);
+        }
+        //7.查询要移动的条目
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileInfo::getUserId, userId)
                 .in(StringUtils.isNotEmpty(ids), FileInfo::getId, Arrays.asList(ids.split(",")));
         List<FileInfo> selectFileList = list(wrapper);
 
-        // 将所选文件重命名
+        //8.逐个移动并处理重名
         for (FileInfo item : selectFileList) {
             FileInfo rootFileInfo = dbFilenameMap.get(item.getFilename());
             // 文件名已存在，重命名被还原的文件名
@@ -260,6 +309,48 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
             updateByMultiId(updateInfo, item.getId(), userId);
         }
     }
+
+
+    /**
+     * 校验：选中的“文件夹”不能被移动到其子孙目录下（否则会形成环）。
+     */
+    private void validateNotMoveFolderIntoDescendant(String userId, String targetPid, List<String> selectedIds) {
+
+        if (Constants.ZERO_STR.equals(targetPid) || selectedIds == null || selectedIds.isEmpty()) {
+            return;
+        }
+
+        // 只取选中的文件夹ID
+        List<FileInfo> selected = list(new LambdaQueryWrapper<FileInfo>()
+                .select(FileInfo::getId, FileInfo::getFolderType)
+                .eq(FileInfo::getUserId, userId)
+                .in(FileInfo::getId, selectedIds));
+
+        Set<String> selectedFolderIds = selected.stream()
+                .filter(f -> FileFolderTypeEnums.FOLDER.getType().equals(f.getFolderType()))
+                .map(FileInfo::getId)
+                .collect(Collectors.toSet());
+
+        if (selectedFolderIds.isEmpty()) {
+            return;
+        }
+
+        // 从目标目录开始向上爬父链，若碰到任一被移动的文件夹ID，则非法
+        String cur = targetPid;
+        int guard = 0; // 防御性：避免脏数据导致死循环
+        while (StringUtils.isNotBlank(cur) && !Constants.ZERO_STR.equals(cur) && guard++ < 1000) {
+            if (selectedFolderIds.contains(cur)) {
+                throw new BizException("不能将文件夹移动到其子目录下");
+            }
+            FileInfo parent = getByMultiId(cur, userId);
+            if (parent == null) {
+                break;
+            }
+            cur = parent.getFilePid();
+        }
+    }
+
+
 
     /**
      * 创建下载链接
@@ -527,7 +618,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
     }
 
     /**
-     * 当文件名字相同时，重命名文件
+     * 在同一用户、同一父目录（filePid）下，如果已存在同名且未删除的文件（或文件夹），就把新名称自动改成不冲突的名称；否则原样返回。
      *
      * @param filePid  文件PID
      * @param userId   用户ID
