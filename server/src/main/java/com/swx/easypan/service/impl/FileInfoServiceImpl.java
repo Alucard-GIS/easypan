@@ -360,15 +360,22 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
      */
     @Override
     public String createDownloadUrl(String userId, String id) {
-        // 防小人
-        FileInfo fileInfo = getByMultiId(id, userId);
+        // 根据文件id和用户id + 正常文件区 + 可用状态：deleted/status 校验 + 文件类型校验：只能是文件不能是文件夹，查询文件信息
+        FileInfo fileInfo = getOne(new LambdaQueryWrapper<FileInfo>()
+                .eq(FileInfo::getId, id)
+                .eq(FileInfo::getUserId, userId)
+                .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag())
+                .eq(FileInfo::getStatus, FileStatusEnums.USING.getStatus())
+                .eq(FileInfo::getFolderType, FileFolderTypeEnums.FILE.getType()));
+
+        // 文件不存在抛异常
         if (fileInfo == null) {
             throw new BizException(ResultCode.PARAM_IS_INVALID);
         }
-        if (FileFolderTypeEnums.FOLDER.getType().equals(fileInfo.getFolderType())) {
-            throw new BizException(ResultCode.PARAM_IS_INVALID);
-        }
+
+        //生成一个code
         String code = StringTools.getRandomString(Constants.LENGTH_50);
+        //构造下载目标对象，封装code、文件名、文件路径等信息，后续下载接口会用到
         DownloadFileDTO fileDTO = new DownloadFileDTO();
         fileDTO.setCode(code);
         fileDTO.setFilename(fileInfo.getFilename());
@@ -401,7 +408,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
             findAllSubFolderList(delFilePidList, userId, fileInfo.getId(), FileDelFlagEnums.USING.getFlag());
         }
         if (!delFilePidList.isEmpty()) {
-            // 目录下的文件，非选中文件直接删除，即deleted置为2
+            // 目录下的文件，非选中文件直接删除，即deleted 置为 2
             FileInfo delFileInfo = new FileInfo();
             delFileInfo.setDeleted(FileDelFlagEnums.DEL.getFlag());
             // 根据Pid删除文件，即删除目录下的所有文件

@@ -163,7 +163,7 @@ public class FileInfoController {
         fileInfoService.changeFileFolder(user.getId(), moveFileDTO);
     }
 
-    // 创建下载链接
+    // 创建下载链接（需要鉴权）
     @GetMapping("/createDownloadUrl/{id}")
     public Map<String, String> createDownloadUrl(HttpSession session, @PathVariable("id") @NotEmpty String id) {
         SessionWebUserVO user = (SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY);

@@ -7,7 +7,7 @@ import java.lang.annotation.*;
 @Documented
 public @interface LoginValidator {
 
-    // 是否校验，默认为true
+    // 是否校验登录状态，默认为true
     boolean validated() default true;
 
     // 是否校验管理员权限，默认为false
