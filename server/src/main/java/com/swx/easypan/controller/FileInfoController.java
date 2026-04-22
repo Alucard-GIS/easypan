@@ -147,6 +147,7 @@ public class FileInfoController {
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileInfo::getFilePid, filePid)
                 .eq(FileInfo::getUserId, user.getId())
+                .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag())
                 .eq(FileInfo::getFolderType, FileFolderTypeEnums.FOLDER.getType());
         List<FileInfo> list = fileInfoService.list(wrapper);
         return list.stream().map(item -> {
@@ -189,7 +190,7 @@ public class FileInfoController {
         FileUtils.writeDownloadFile(response, request, filename, filePath);
     }
 
-    // 删除文件
+    // 删除文件（逻辑删除——移动到回收站）
     @DeleteMapping("/delFile/{ids}")
     public void delFile(HttpSession session, @PathVariable("ids") @NotEmpty String ids) {
         SessionWebUserVO user = (SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY);

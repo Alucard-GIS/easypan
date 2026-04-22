@@ -150,12 +150,18 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         if (id.endsWith(".ts")) {
             String[] tsArray = id.split("_");
             String realFileId = tsArray[0];
-            FileInfo fileInfo = this.getOne(new LambdaQueryWrapper<FileInfo>().eq(FileInfo::getId, realFileId).eq(FileInfo::getUserId, userId));
+            FileInfo fileInfo = this.getOne(new LambdaQueryWrapper<FileInfo>()
+                    .eq(FileInfo::getId, realFileId)
+                    .eq(FileInfo::getUserId, userId)
+                    .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag()));
             String fileName = appConfig.getProjectFolder() + Constants.FILE_FOLDER_FILE + fileInfo.getFilePath();
             String folderPath = StringTools.getFilename(fileName);
             filePath = folderPath + "/" + id;
         } else {
-            FileInfo fileInfo = this.getOne(new LambdaQueryWrapper<FileInfo>().eq(FileInfo::getId, id).eq(FileInfo::getUserId, userId));
+            FileInfo fileInfo = this.getOne(new LambdaQueryWrapper<FileInfo>()
+                    .eq(FileInfo::getId, id)
+                    .eq(FileInfo::getUserId, userId)
+                    .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag()));
             if (null == fileInfo) {
                 throw new BizException("文件不存在");
             }
@@ -204,7 +210,10 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
     @Override
     public List<FileInfoVO> listFolderByIds(String[] ids) {
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
-        wrapper.select(FileInfo::getId, FileInfo::getFilename).in(FileInfo::getId, Arrays.asList(ids)).last("order by field(id, \"" + StringUtils.join(ids, "\",\"") + "\")");
+        wrapper.select(FileInfo::getId, FileInfo::getFilename)
+                .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag())
+                .in(FileInfo::getId, Arrays.asList(ids))
+                .last("order by field(id, \"" + StringUtils.join(ids, "\",\"") + "\")");
         List<FileInfo> list = list(wrapper);
         List<FileInfoVO> fileInfoVOS = list.stream().map(item -> {
             FileInfoVO fileInfoVO = new FileInfoVO();
@@ -254,6 +263,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
      * @param moveFileDTO 移动文件信息
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void changeFileFolder(String userId, MoveFileDTO moveFileDTO) {
         //1.读取参数
         String filePid = moveFileDTO.getFilePid();
@@ -283,7 +293,10 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         //5.校验：选中的“文件夹”不能被移动到其子孙目录下（否则会形成环）
         validateNotMoveFolderIntoDescendant(userId, filePid, idList);
         //6.预取目标目录下已有名称，用于判重
-        List<FileInfo> dbFile = list(new LambdaQueryWrapper<FileInfo>().eq(FileInfo::getFilePid, filePid).eq(FileInfo::getUserId, userId));
+        List<FileInfo> dbFile = list(new LambdaQueryWrapper<FileInfo>()
+                .eq(FileInfo::getFilePid, filePid)
+                .eq(FileInfo::getUserId, userId)
+                .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag()));
         //把目标目录下的文件列表转换成Map，key是filename，value是FileInfo对象，方便后续查重时获取同名文件信息
         Map<String, FileInfo> dbFilenameMap = new HashMap<>();
         for (FileInfo fileInfo : dbFile) {
@@ -293,6 +306,7 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
         //7.查询要移动的条目
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileInfo::getUserId, userId)
+                .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag())
                 .in(StringUtils.isNotEmpty(ids), FileInfo::getId, Arrays.asList(ids.split(",")));
         List<FileInfo> selectFileList = list(wrapper);
 
@@ -337,8 +351,11 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
 
         // 从目标目录开始向上爬父链，若碰到任一被移动的文件夹ID，则非法
         String cur = targetPid;
-        int guard = 0; // 防御性：避免脏数据导致死循环
-        while (StringUtils.isNotBlank(cur) && !Constants.ZERO_STR.equals(cur) && guard++ < 1000) {
+        Set<String> visited = new HashSet<>();
+        while (StringUtils.isNotBlank(cur) && !Constants.ZERO_STR.equals(cur)) {
+            if (!visited.add(cur)) {
+                throw new BizException("目录结构异常，存在循环引用");
+            }
             if (selectedFolderIds.contains(cur)) {
                 throw new BizException("不能将文件夹移动到其子目录下");
             }
@@ -392,89 +409,181 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
      * @param ids    文件IDS，逗号分隔
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void removeFile2RecycleBatch(String userId, String ids) {
-        // 查询文件是否已经在回收站
+
+        //1.查出用户选中的正常文件
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileInfo::getUserId, userId)
                 .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag())
                 .in(StringUtils.isNotEmpty(ids), FileInfo::getId, Arrays.asList(ids.split(",")));
         List<FileInfo> dbFileList = list(wrapper);
+        //1.1 如果查不到，直接返回：
         if (dbFileList.isEmpty()) {
             return;
         }
-        // 递归删除文件
-        ArrayList<String> delFilePidList = new ArrayList<>();
+
+        //2.如果选中项里有文件夹，递归收集它下面所有正常子项 ID。
+        //2.1 存储递归查找所有子项ID的列表
+        ArrayList<String> delFileIdList = new ArrayList<>();
+        //2.2 如果选中项里有文件夹，递归收集它下面所有正常子项 ID（包括子文件和子文件夹），但不会把选中项本身加入这个列表
         for (FileInfo fileInfo : dbFileList) {
-            findAllSubFolderList(delFilePidList, userId, fileInfo.getId(), FileDelFlagEnums.USING.getFlag());
+            //2.3 选中项是文件夹，递归查找它下面的所有正常子项 ID
+            if (FileFolderTypeEnums.FOLDER.getType().equals(fileInfo.getFolderType())) {
+                findAllSubFileList(delFileIdList, userId, fileInfo.getId(), FileDelFlagEnums.USING.getFlag());
+            }
         }
-        if (!delFilePidList.isEmpty()) {
-            // 目录下的文件，非选中文件直接删除，即deleted 置为 2
+
+        //3.把收集到的子项ID列表批量更新为已删除（deleted置为2），但不更新选中项本身
+        if (!delFileIdList.isEmpty()) {
             FileInfo delFileInfo = new FileInfo();
             delFileInfo.setDeleted(FileDelFlagEnums.DEL.getFlag());
-            // 根据Pid删除文件，即删除目录下的所有文件
-            baseMapper.updateFileDelFlagBatch(delFileInfo, userId, delFilePidList, null, FileDelFlagEnums.USING.getFlag());
+
+            baseMapper.updateFileDelFlagBatch(
+                    delFileInfo,
+                    userId,
+                    null,
+                    delFileIdList,
+                    FileDelFlagEnums.USING.getFlag()
+            );
         }
-        // 将选中的文件更新为回收站，即deleted置为1
+
+        //4.把选中的顶层项更新为回收站，即deleted置为1
         List<String> recIds = Arrays.asList(ids.split(","));
         FileInfo recFileInfo = new FileInfo();
         recFileInfo.setDeleted(FileDelFlagEnums.RECYCLE.getFlag());
         recFileInfo.setRecoveryTime(LocalDateTime.now());
-        baseMapper.updateFileDelFlagBatch(recFileInfo, userId, null, recIds, FileDelFlagEnums.USING.getFlag());
+        baseMapper.updateFileDelFlagBatch(
+                recFileInfo,
+                userId,
+                null,
+                recIds,
+                FileDelFlagEnums.USING.getFlag()
+        );
     }
 
-    // 递归查找当前目录下的子目录
+    /**
+     * 递归收集指定文件夹及其所有子文件夹 ID。
+     * <p>
+     * 这个方法只收集文件夹 ID，不收集普通文件 ID。恢复文件夹时会用这些文件夹 ID 作为
+     * file_pid 条件，批量恢复挂在这些目录下面的 DEL 子项。
+     *
+     * @param idList  收集结果，包含当前文件夹 ID 和所有子文件夹 ID
+     * @param userId  当前用户 ID
+     * @param id      当前要遍历的文件夹 ID
+     * @param delFlag 需要过滤的删除状态；传 null 表示遍历时不按 deleted 状态过滤
+     */
     public void findAllSubFolderList(List<String> idList, String userId, String id, Integer delFlag) {
+        findAllSubFolderList(idList, userId, id, delFlag, new HashSet<>());
+    }
+
+    private void findAllSubFolderList(List<String> idList, String userId, String id, Integer delFlag, Set<String> visited) {
+        // 防止脏数据形成父子循环时递归死循环。
+        if (!visited.add(id)) {
+            return;
+        }
+        // 当前 id 本身也是一个文件夹，恢复其直接子项时需要用 file_pid = 当前 id 匹配。
         idList.add(id);
-        // 查找当前目录下的所有子目录
+
+        // 只查当前目录下的子文件夹；普通文件不需要加入 pid 列表。
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileInfo::getUserId, userId)
                 .eq(FileInfo::getFilePid, id)
-                .eq(FileInfo::getDeleted, delFlag)
+                .eq(delFlag != null, FileInfo::getDeleted, delFlag)
                 .eq(FileInfo::getFolderType, FileFolderTypeEnums.FOLDER.getType());
         List<FileInfo> fileInfoList = list(wrapper);
         for (FileInfo fileInfo : fileInfoList) {
-            findAllSubFolderList(idList, userId, fileInfo.getId(), delFlag);
+            findAllSubFolderList(idList, userId, fileInfo.getId(), delFlag, visited);
         }
     }
 
+    /**
+     * 递归收集指定文件夹下面的所有子项 ID，包括子文件和子文件夹。
+     * @param idList 收集结果：包含所有子文件和子文件夹 ID，但不包含当前文件夹 ID
+     * @param userId
+     * @param id
+     * @param delFlag
+     */
+    private void findAllSubFileList(List<String> idList, String userId, String id, Integer delFlag) {
+        findAllSubFileList(idList, userId, id, delFlag, new HashSet<>());
+    }
+
+    private void findAllSubFileList(List<String> idList, String userId, String id, Integer delFlag, Set<String> visited) {
+        if (!visited.add(id)) {
+            return;
+        }
+        LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(FileInfo::getUserId, userId)
+                .eq(FileInfo::getFilePid, id)
+                .eq(delFlag != null, FileInfo::getDeleted, delFlag);
+        List<FileInfo> fileInfoList = list(wrapper);
+        for (FileInfo fileInfo : fileInfoList) {
+            if (visited.contains(fileInfo.getId())) {
+                continue;
+            }
+            idList.add(fileInfo.getId());
+            if (FileFolderTypeEnums.FOLDER.getType().equals(fileInfo.getFolderType())) {
+                findAllSubFileList(idList, userId, fileInfo.getId(), delFlag, visited);
+            }
+        }
+    }
+
+    /**
+     * 从回收站恢复文件/文件夹。
+     * <p>
+     * 回收站只展示用户选中的顶层条目：顶层条目 deleted = RECYCLE；
+     * 如果顶层条目是文件夹，它下面的子文件/子文件夹在删除时会被标记为 DEL。
+     * 恢复文件夹时，需要先恢复其子树中的 DEL 子项，再恢复顶层文件夹本身。
+     *
+     * @param userId 当前用户 ID
+     * @param ids    需要恢复的回收站顶层条目 ID，多个 ID 用逗号分隔
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void recoverFileBatch(String userId, String ids) {
+        // 1. 拆分前端传入的回收站条目 ID。
         List<String> idList = Arrays.asList(ids.split(","));
+
+        // 2. 只查询当前用户、当前仍处于回收站状态的顶层条目。
         LambdaQueryWrapper<FileInfo> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FileInfo::getUserId, userId)
                 .eq(FileInfo::getDeleted, FileDelFlagEnums.RECYCLE.getFlag())
                 .in(!ids.isEmpty(), FileInfo::getId, idList);
         List<FileInfo> fileInfoList = list(wrapper);
-        ArrayList<String> delFileSubFolderFileIdList = new ArrayList<>();
+
+        // 3. 如果恢复的是文件夹，收集该文件夹及其所有子文件夹 ID。
+        // 后续通过 file_pid in (...) 恢复挂在这些目录下的 DEL 子项。
+        ArrayList<String> delFileSubFolderPidList = new ArrayList<>();
         for (FileInfo fileInfo : fileInfoList) {
             if (FileFolderTypeEnums.FOLDER.getType().equals(fileInfo.getFolderType())) {
-                // 查询目录下的所有文件
-                findAllSubFolderList(delFileSubFolderFileIdList, userId, fileInfo.getId(), FileDelFlagEnums.DEL.getFlag());
+                findAllSubFolderList(delFileSubFolderPidList, userId, fileInfo.getId(), null);
             }
         }
-        // 查询所有根目录的文件
+
+        // 4. 查询根目录已有正常文件/文件夹，用于处理恢复到根目录后的同名冲突。
         List<FileInfo> rootFileList = list(new LambdaQueryWrapper<FileInfo>().eq(FileInfo::getUserId, userId)
                 .eq(FileInfo::getDeleted, FileDelFlagEnums.USING.getFlag())
                 .eq(FileInfo::getFilePid, Constants.ZERO_STR));
         Map<String, FileInfo> rootFileMap = rootFileList.stream().collect(Collectors.toMap(FileInfo::getFilename, Function.identity(), (a, b) -> b));
-        // 将目录下所有删除的文件更新为使用中
-        if (!delFileSubFolderFileIdList.isEmpty()) {
+
+        // 5. 先恢复文件夹下面的子项：只把 deleted = DEL 的记录恢复为 USING。
+        // 这里使用 pidList，所以会恢复这些文件夹直接挂载的普通文件和子文件夹。
+        if (!delFileSubFolderPidList.isEmpty()) {
             FileInfo fileInfo = new FileInfo();
             fileInfo.setDeleted(FileDelFlagEnums.USING.getFlag());
-            baseMapper.updateFileDelFlagBatch(fileInfo, userId, delFileSubFolderFileIdList, null, FileDelFlagEnums.DEL.getFlag());
+            baseMapper.updateFileDelFlagBatch(fileInfo, userId, delFileSubFolderPidList, null, FileDelFlagEnums.DEL.getFlag());
         }
-        // 将所选文件更新为正常，且父级目录设置为根目录
+
+        // 6. 再恢复用户选中的回收站顶层条目，并把它们放回根目录。
         FileInfo fileInfo = new FileInfo();
         fileInfo.setDeleted(FileDelFlagEnums.USING.getFlag());
         fileInfo.setFilePid(Constants.ZERO_STR);
         fileInfo.setUpdateTime(LocalDateTime.now());
         baseMapper.updateFileDelFlagBatch(fileInfo, userId, null, idList, FileDelFlagEnums.RECYCLE.getFlag());
 
-        // 将所选文件重命名
+        // 7. 如果根目录已存在同名正常条目，给恢复出来的顶层条目自动重命名。
         for (FileInfo info : fileInfoList) {
             FileInfo rootFileInfo = rootFileMap.get(info.getFilename());
-            // 文件名已存在，重命名
             if (null != rootFileInfo) {
                 FileInfo updateInfo = new FileInfo();
                 updateInfo.setFilename(StringTools.rename(info.getFilename()));

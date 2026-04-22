@@ -67,6 +67,7 @@ public class FileShare implements Serializable {
     /**
      * 逻辑删除
      */
+    @TableLogic
     private Integer deleted;
 
     /**

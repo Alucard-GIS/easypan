@@ -66,11 +66,6 @@ mybatis-plus:
   configuration:
     # 开启MP的日志（输出到控制台）
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
-  global-config:
-    db-config:
-      logic-delete-value: 1
-      logic-not-delete-value: 0
-      logic-delete-field: deleted
   mapper-locations: classpath:mapper/*.xml
 
 project:
