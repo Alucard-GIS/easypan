@@ -78,6 +78,10 @@ log:
 admin:
   emails: 2077445245@qq.com
 
+recycle:
+  expire-days: 10
+  clear-batch-size: 100
+
 dev: false
 
 qq:

@@ -50,6 +50,7 @@ public class ShareController {
         return fileShareService.pageInfo(pageParam, userId);
     }
 
+    // 分享文件
     @PostMapping("/shareFile")
     public FileShare shareFile(HttpSession session, @RequestBody ShareDTO shareDTO) {
         String userId = ((SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY)).getId();
@@ -59,6 +60,7 @@ public class ShareController {
         return fileShareService.saveShare(fileShare);
     }
 
+    // 取消分享
     @DeleteMapping("/cancelShare/{shareIds}")
     public void cancelShare(HttpSession session, @PathVariable("shareIds") @NotEmpty String shareIds) {
         String userId = ((SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY)).getId();

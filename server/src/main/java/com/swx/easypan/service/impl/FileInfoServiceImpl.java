@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.swx.common.pojo.BizException;
 import com.swx.common.pojo.ResultCode;
 import com.swx.easypan.entity.config.AppConfig;
+import com.swx.easypan.entity.config.RecycleConfig;
 import com.swx.easypan.entity.constants.Constants;
 import com.swx.easypan.entity.dto.*;
 import com.swx.easypan.entity.enums.*;
@@ -50,10 +51,12 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
 
     private final AppConfig appConfig;
     private final RedisComponent redisComponent;
+    private final RecycleConfig recycleConfig;
 
-    public FileInfoServiceImpl(AppConfig appConfig, RedisComponent redisComponent) {
+    public FileInfoServiceImpl(AppConfig appConfig, RedisComponent redisComponent, RecycleConfig recycleConfig) {
         this.appConfig = appConfig;
         this.redisComponent = redisComponent;
+        this.recycleConfig = recycleConfig;
     }
 
     /**
@@ -551,6 +554,9 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
                 .in(!ids.isEmpty(), FileInfo::getId, idList);
         List<FileInfo> fileInfoList = list(wrapper);
 
+        // 2.1 回收站文件只能在有效期内恢复；过期条目需要等待系统自动清理，不允许再恢复。
+        validateRecycleRecoverable(fileInfoList);
+
         // 3. 如果恢复的是文件夹，收集该文件夹及其所有子文件夹 ID。
         // 后续通过 file_pid in (...) 恢复挂在这些目录下的 DEL 子项。
         ArrayList<String> delFileSubFolderPidList = new ArrayList<>();
@@ -588,6 +594,25 @@ public class FileInfoServiceImpl extends ServiceImpl<FileInfoMapper, FileInfo> i
                 FileInfo updateInfo = new FileInfo();
                 updateInfo.setFilename(StringTools.rename(info.getFilename()));
                 updateByMultiId(updateInfo, info.getId(), userId);
+            }
+        }
+    }
+
+    /**
+     * 校验回收站顶层条目是否仍在可恢复期限内。
+     */
+    private void validateRecycleRecoverable(List<FileInfo> fileInfoList) {
+        if (fileInfoList == null || fileInfoList.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        for (FileInfo fileInfo : fileInfoList) {
+            LocalDateTime recoveryTime = fileInfo.getRecoveryTime();
+            if (recoveryTime == null) {
+                continue;
+            }
+            if (!recoveryTime.plusDays(recycleConfig.getExpireDays()).isAfter(now)) {
+                throw new BizException("文件已超过回收站有效期，无法恢复");
             }
         }
     }
