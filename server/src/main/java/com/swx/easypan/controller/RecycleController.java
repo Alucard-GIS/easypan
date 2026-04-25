@@ -12,11 +12,15 @@ import com.swx.easypan.entity.vo.SessionWebUserVO;
 import com.swx.easypan.pojo.FileInfo;
 import com.swx.easypan.service.FileInfoService;
 import com.swx.easypan.service.common.UserFileService;
+import org.springframework.util.CollectionUtils;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import javax.servlet.http.HttpSession;
 import javax.validation.constraints.NotEmpty;
+import java.util.List;
+import java.util.stream.Collectors;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 
 @LoginValidator
 @Validated
@@ -57,6 +61,21 @@ public class RecycleController {
     public void delFile(HttpSession session,
                             @PathVariable("ids") @NotEmpty String ids) {
         SessionWebUserVO user = (SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY);
+        userFileService.delFileBatch(user.getId(), ids, false);
+    }
+
+    // 清空当前用户整个回收站
+    @DeleteMapping("/clearRecycle")
+    public void clearRecycle(HttpSession session) {
+        SessionWebUserVO user = (SessionWebUserVO) session.getAttribute(Constants.SESSION_KEY);
+        List<FileInfo> recycleFiles = fileInfoService.list(new LambdaQueryWrapper<FileInfo>()
+                .eq(FileInfo::getUserId, user.getId())
+                .eq(FileInfo::getDeleted, FileDelFlagEnums.RECYCLE.getFlag())
+                .select(FileInfo::getId));
+        if (CollectionUtils.isEmpty(recycleFiles)) {
+            return;
+        }
+        String ids = recycleFiles.stream().map(FileInfo::getId).collect(Collectors.joining(","));
         userFileService.delFileBatch(user.getId(), ids, false);
     }
 }
