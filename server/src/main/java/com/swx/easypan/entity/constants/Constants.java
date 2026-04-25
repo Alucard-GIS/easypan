@@ -2,6 +2,7 @@ package com.swx.easypan.entity.constants;
 
 public class Constants {
     public static final Integer ZERO = 0;
+    public static final Integer LENGTH_4 = 4;
     public static final String ZERO_STR = "0";
     public static final Integer LENGTH_5 = 5;
     public static final Integer LENGTH_10 = 10;

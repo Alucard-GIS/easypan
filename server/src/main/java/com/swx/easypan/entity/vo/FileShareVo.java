@@ -12,58 +12,39 @@ public class FileShareVo implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * 分享ID
-     */
     private String id;
 
-    /**
-     * 文件ID
-     */
     private String fileId;
 
-    /**
-     * 用户ID
-     */
     private String userId;
 
-    /**
-     * 有效期类型 0:1天 1:7天 2:30天 3:永久有效
-     */
     private Boolean validType;
 
-    /**
-     * 提取码
-     */
     private String code;
 
-    /**
-     * 浏览次数
-     */
     private Integer browseCount;
 
-    /**
-     * 保存次数
-     */
     private Integer saveCount;
 
-    /**
-     * 下载次数
-     */
     private Integer downloadCount;
 
-    /**
-     * 过期时间
-     */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime expireTime;
 
-    /**
-     * 创建时间
-     */
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime createTime;
 
+    private String filename;
+
+    private String fileCover;
+
+    private Integer folderType;
+
+    private Integer fileType;
+
+    private Integer status;
+
+    private Boolean effective;
 }
